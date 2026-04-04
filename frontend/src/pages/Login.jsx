@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import { login } from '../services/api'
@@ -14,6 +14,8 @@ export default function Login() {
   const { loginUser } = useAuth()
   const { theme, toggleTheme } = useTheme()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const isTimeout = searchParams.get('timeout') === 'true'
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -41,6 +43,7 @@ export default function Login() {
           <div className="auth-icon"><LogIn size={28} /></div>
           <h1>MANGAUD Support System</h1>
           <p>Sign in to your account</p>
+          {isTimeout && <div className="alert alert-warning" style={{ marginTop: 10 }}>Session expired due to inactivity. Please login again.</div>}
         </div>
         <form onSubmit={handleSubmit} className="auth-form">
           <div className="form-group">

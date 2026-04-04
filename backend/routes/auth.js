@@ -2,6 +2,7 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const { body } = require('express-validator');
 const User = require('../models/User');
+const Settings = require('../models/Settings');
 const auth = require('../middleware/auth');
 const requireRole = require('../middleware/requireRole');
 const validate = require('../middleware/validate');
@@ -37,27 +38,8 @@ const loginValidation = [
   body('password').notEmpty().withMessage('Password is required')
 ];
 
-// Hidden seed — creates default admin if none exists (requires admin auth)
-router.post('/_seed', auth, requireRole('admin'), async (req, res, next) => {
-  try {
-    const existingAdmin = await User.findOne({ role: 'admin' });
-    if (existingAdmin) {
-      return res.status(409).json({ message: 'Admin already exists.', email: existingAdmin.email });
-    }
-
-    const admin = new User({
-      name: 'Admin',
-      email: 'admin@mangaud.com',
-      password: 'admin@mangaud',
-      role: 'admin'
-    });
-    await admin.save();
-
-    res.status(201).json({ message: 'Admin created.', email: 'admin@mangaud.com', password: 'admin@mangaud' });
-  } catch (err) {
-    next(err);
-  }
-});
+// Hidden seed — removes hardcoded credentials, use admin panel for user management
+// router.post('/_seed', ...) - REMOVED for security
 
 // Register — public, cannot self-register as admin
 router.post('/register', registerValidation, validate, async (req, res, next) => {
@@ -109,6 +91,15 @@ router.post('/login', loginValidation, validate, async (req, res, next) => {
     }
 
     const token = generateToken(user._id, user.role);
+
+    // Generate and set CSRF token
+    const csrfToken = require('../middleware/csrf').generateCSRFToken();
+    res.cookie('csrfToken', csrfToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 60 * 60 * 1000 // 1 hour
+    });
 
     res.json({
       token,
@@ -362,6 +353,223 @@ router.put('/users/:id/status', auth, requireRole('admin'), async (req, res, nex
         isActive: user.isActive
       }
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Admin: reset user password
+router.put('/users/:id/password', auth, requireRole('admin'), [
+  body('newPassword').isLength({ min: 6 }).withMessage('New password must be at least 6 characters')
+], validate, async (req, res, next) => {
+  try {
+    const { newPassword } = req.body;
+    const userId = req.params.id;
+
+    if (userId === req.userId.toString()) {
+      return res.status(400).json({ message: 'Cannot reset your own password this way. Use change-password instead.' });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    user.password = newPassword;
+    await user.save();
+
+    // Clear user cache
+    const auth = require('../middleware/auth');
+    auth.clearCache(userId);
+
+    res.json({ message: 'Password reset successfully.' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Admin: update user details
+router.put('/users/:id', auth, requireRole('admin'), [
+  body('name').optional().trim().isLength({ min: 2, max: 100 }),
+  body('email').optional().isEmail().normalizeEmail()
+], validate, async (req, res, next) => {
+  try {
+    const { name, email } = req.body;
+    const userId = req.params.id;
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    // Check for duplicate email
+    if (email && email !== user.email) {
+      const existing = await User.findOne({ email, _id: { $ne: userId } });
+      if (existing) {
+        return res.status(409).json({ message: 'Email already in use.' });
+      }
+    }
+
+    if (name) user.name = name;
+    if (email) user.email = email;
+    await user.save();
+
+    res.json({
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        isActive: user.isActive
+      }
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Admin: Update system settings (like API keys)
+router.put('/settings', auth, requireRole('admin'), [
+  body('key').notEmpty().withMessage('Setting key is required'),
+], validate, async (req, res, next) => {
+  try {
+    const { key, value } = req.body;
+    
+    // Validate API key value if it's an API key
+    if (key.includes('API_KEY') && value && value.length > 500) {
+      return res.status(400).json({ message: 'API key too long (max 500 characters)' });
+    }
+    
+    let setting = await Settings.findOne({ key });
+    if (setting) {
+      setting.value = value || '';
+      await setting.save();
+    } else {
+      setting = new Settings({ key, value: value || '' });
+      await setting.save();
+    }
+
+    if (value) {
+      process.env[key] = value;
+    } else {
+      delete process.env[key];
+    }
+
+    res.json({ message: `${key} updated successfully` });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Get all system settings (admin only)
+router.get('/settings', auth, requireRole('admin'), async (req, res, next) => {
+  try {
+    const settings = await Settings.find();
+    const settingsObj = {};
+    settings.forEach(s => {
+      settingsObj[s.key] = s.value;
+    });
+    res.json({ settings: settingsObj });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Verify API key (admin only)
+router.post('/verify-api-key', auth, requireRole('admin'), async (req, res, next) => {
+  try {
+    const { apiKey } = req.body;
+    if (!apiKey || !apiKey.trim()) {
+      return res.status(400).json({ valid: false, message: 'API key is required' });
+    }
+
+    const axios = require('axios');
+    const key = apiKey.trim();
+    
+    // Try to determine provider and verify
+    let provider = 'groq';
+    
+    if (key.startsWith('sk-') && !key.startsWith('sk-ant-')) {
+      provider = 'openai';
+    } else if (key.startsWith('sk-ant-')) {
+      provider = 'anthropic';
+    } else if (key.startsWith('AIza')) {
+      provider = 'google';
+    }
+
+    let success = false;
+    let errorMsg = 'Unknown error';
+
+    if (provider === 'openai') {
+      try {
+        await axios.get(
+          'https://api.openai.com/v1/models',
+          { headers: { 'Authorization': `Bearer ${key}` }, timeout: 10000 }
+        );
+        success = true;
+      } catch (err) {
+        errorMsg = 'Invalid API key';
+      }
+    } else if (provider === 'anthropic') {
+      try {
+        await axios.post(
+          'https://api.anthropic.com/v1/messages',
+          { model: 'claude-3-haiku-20240307', max_tokens: 10, messages: [{ role: 'user', content: 'Hi' }] },
+          { headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' }, timeout: 10000 }
+        );
+        success = true;
+      } catch (err) {
+        errorMsg = 'Invalid API key';
+      }
+    } else if (provider === 'google') {
+      try {
+        await axios.get(
+          `https://generativelanguage.googleapis.com/v1/models?key=${key}`,
+          { timeout: 10000 }
+        );
+        success = true;
+      } catch (err) {
+        errorMsg = 'Invalid API key';
+      }
+    } else {
+      // Default: Groq - try a simple chat completion
+      try {
+        await axios.post(
+          'https://api.groq.com/openai/v1/chat/completions',
+          { model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: 'Hi' }], max_tokens: 5 },
+          { headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' }, timeout: 10000 }
+        );
+        success = true;
+      } catch (err) {
+        errorMsg = 'Invalid API key';
+      }
+    }
+
+    if (success) {
+      res.json({ valid: true, provider, message: 'API key is valid' });
+    } else {
+      res.json({ valid: false, provider, message: errorMsg });
+    }
+  } catch (err) {
+    console.error('Verify API key error:', err.message);
+    res.status(500).json({ valid: false, message: 'Failed to verify API key' });
+  }
+});
+
+// Delete system settings (admin only)
+router.delete('/settings/:key', auth, requireRole('admin'), async (req, res, next) => {
+  try {
+    const { key } = req.params;
+    
+    const allowedKeys = ['AI_API_KEY', 'GROQ_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'AI_MODEL', 'AI_PROVIDER'];
+    if (!allowedKeys.includes(key)) {
+      return res.status(400).json({ message: 'Invalid setting key' });
+    }
+
+    await Settings.deleteOne({ key });
+    delete process.env[key];
+
+    res.json({ message: `${key} deleted successfully` });
   } catch (err) {
     next(err);
   }

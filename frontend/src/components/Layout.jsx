@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import {
   LayoutDashboard, Ticket, PlusCircle, MessageSquare, User,
-  ClipboardList, Users, LogOut, Menu, X, ChevronRight, Sun, Moon
+  ClipboardList, Users, LogOut, Menu, X, Sun, Moon, Settings
 } from 'lucide-react'
 
 const navItems = {
@@ -24,6 +24,7 @@ const navItems = {
     { to: '/admin', icon: LayoutDashboard, label: 'Dashboard', end: true },
     { to: '/admin/tickets', icon: Ticket, label: 'All Tickets', end: true },
     { to: '/admin/users', icon: Users, label: 'Users' },
+    { to: '/admin/settings', icon: Settings, label: 'Settings' },
     { to: '/admin/profile', icon: User, label: 'Profile' },
   ],
 }
@@ -79,7 +80,6 @@ export default function Layout() {
             >
               <item.icon size={18} />
               <span>{item.label}</span>
-              <ChevronRight size={14} className="sidebar-link-arrow" />
             </NavLink>
           ))}
         </nav>

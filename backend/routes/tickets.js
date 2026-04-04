@@ -221,9 +221,13 @@ router.get('/id/:ticketId', auth, async (req, res, next) => {
 
 router.get('/:id', auth, async (req, res, next) => {
   try {
+    // Only admin gets email fields
+    const studentSelect = req.role === 'admin' ? 'name email' : 'name';
+    const workerSelect = req.role === 'admin' ? 'name email rating totalRatings' : 'name rating totalRatings';
+
     const ticket = await Ticket.findById(req.params.id)
-      .populate('studentId', 'name')
-      .populate('assignedWorker', 'name');
+      .populate('studentId', studentSelect)
+      .populate('assignedWorker', workerSelect);
 
     if (!ticket) {
       return res.status(404).json({ message: 'Ticket not found.' });
