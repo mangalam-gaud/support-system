@@ -18,6 +18,7 @@ import AdminUsers from './pages/AdminUsers'
 import Chatbot from './pages/Chatbot'
 import Profile from './pages/Profile'
 import AdminLogin from './pages/AdminLogin'
+import AdminSettings from './pages/AdminSettings'
 
 function ProtectedRoute({ children, roles }) {
   const { user, loading } = useAuth()
@@ -73,6 +74,7 @@ export default function App() {
               <Route path="tickets" element={<AdminTickets />} />
               <Route path="tickets/:id" element={<TicketDetail />} />
               <Route path="users" element={<AdminUsers />} />
+              <Route path="settings" element={<AdminSettings />} />
               <Route path="profile" element={<Profile />} />
             </Route>
 

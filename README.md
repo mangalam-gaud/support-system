@@ -18,21 +18,24 @@
 
 ### 👨‍🎓 Student Portal
 - 📝 Create support tickets with image attachments (up to 3MB)
-- 🔍 Track ticket status (Open → Assigned → In Progress → Resolved)
-- 💬 AI Chatbot for academic & helpdesk queries
+- 🔍 Track ticket status (Open → Assigned → In Progress → Resolved/Rejected)
+- 💬 AI Chatbot for academic & helpdesk queries with FAQs
 - 📊 Dashboard with ticket statistics
+- ⭐ Rate workers after ticket completion
+- 🌙 Dark/Light mode with system auto-detection
 
 ### 👨‍💼 Worker Portal
-- 📋 View assigned tasks
-- ⏯️ Start and complete tasks
+- 📋 View assigned tasks with priority sorting
+- ⏯️ Start and complete tasks directly from detail page
 - 📝 Add notes and upload completion proof images
-- 📈 Personal task statistics
+- 📈 Personal task statistics dashboard
 
 ### 🛡️ Admin Portal
-- 🎯 Manage all tickets (set priority, assign workers, reject)
-- 👥 User management (create, activate/deactivate)
+- 🎯 Manage all tickets (set priority, assign workers, reject, reopen)
+- 👥 User management (create, activate/deactivate, reset passwords)
 - 📊 Comprehensive dashboard with analytics
-- 🔐 Secure admin access
+- 🔐 Hidden admin login at `/admin-login`
+- ⚙️ AI API key management in settings (supports any provider)
 
 ### 🔒 Security Features
 - JWT-based authentication with token caching
@@ -41,18 +44,31 @@
 - Helmet.js security headers
 - Input validation with express-validator
 - Password hashing with bcrypt (salt rounds 12)
+- CSRF protection middleware
+- 15-minute inactivity timeout auto-logout
+- Session: close browser = logout, refresh = stay logged in
 
 ### 🤖 AI Chatbot
 - Powered by Groq API (Llama 3.3 model)
-- Context-aware responses from college website data
+- Support for any AI provider (OpenAI, Anthropic, etc.)
+- Context-aware responses
 - Persistent conversation history (stored in MongoDB)
-- Rate limit protection
+- 10 suggested questions for quick access
+- FAQ system works offline without API key
 
 ### 📎 File Uploads
 - Image support: JPEG, PNG, GIF, WebP
 - Max size: 3MB per file
 - Student ticket attachments
 - Worker completion proof uploads
+- Camera capture support for mobile
+
+### 🎨 UI/UX Features
+- Modern two-column detail page layout
+- Color-coded status indicators
+- Action buttons directly in detail view
+- Responsive design for all screen sizes
+- Privacy: students can't see worker emails, workers can't see student emails
 
 ---
 
@@ -61,24 +77,26 @@
 ```
 support-system/
 ├── backend/
-│   ├── middleware/        # Auth, validation, error handling, upload
-│   ├── models/            # MongoDB schemas (User, Ticket, Task, Conversation)
+│   ├── middleware/        # Auth, validation, error handling, upload, CSRF
+│   ├── models/            # MongoDB schemas (User, Ticket, Task, Conversation, Settings)
 │   ├── routes/            # API endpoints
 │   ├── uploads/           # Uploaded images
 │   ├── server.js          # Express app entry point
 │   └── package.json
 ├── frontend/
 │   ├── src/
-│   │   ├── components/    # Reusable UI components
-│   │   ├── context/       # React context (Auth)
+│   │   ├── components/    # Reusable UI components (Layout)
+│   │   ├── context/       # React context (Auth, Theme)
 │   │   ├── pages/         # Page components
 │   │   ├── services/      # API service layer
 │   │   ├── App.jsx       # Main router
-│   │   └── index.css    # Global styles
+│   │   ├── index.css    # Global styles with CSS variables
+│   │   └── main.jsx      # React entry point
 │   ├── public/           # Static assets
 │   ├── index.html        # Entry HTML
 │   └── package.json
-└── README.md
+├── README.md
+└── DEPLOYMENT.md
 ```
 
 ---
@@ -115,7 +133,7 @@ npm run dev
 ```
 
 4. **Access the application**
-- Frontend: http://localhost:3000
+- Frontend: http://localhost:5173 (Vite default)
 - Backend API: http://localhost:5000
 
 ---
@@ -129,7 +147,7 @@ MONGODB_URI=mongodb://localhost:27017/support-system
 JWT_SECRET=your-super-secret-key-at-least-32-chars
 JWT_EXPIRES_IN=24h
 NODE_ENV=development
-FRONTEND_URL=http://localhost:3000
+FRONTEND_URL=http://localhost:5173
 GROQ_API_KEY=your-groq-api-key
 AI_MODEL=llama-3.3-70b-versatile
 RATE_LIMIT_WINDOW_MS=900000
@@ -140,13 +158,7 @@ RATE_LIMIT_MAX=100
 
 ## 🔑 Default Admin Account
 
-After first run, you can create the default admin:
-
-```bash
-curl -X POST http://localhost:5000/api/auth/_seed
-```
-
-Or through the hidden admin login at `/admin-login` (requires admin auth).
+**Hidden admin login:** `/admin-login`
 
 **Default credentials:**
 - Email: `admin@mangaud.com`
@@ -167,13 +179,19 @@ Or through the hidden admin login at `/admin-login` (requires admin auth).
 | PUT | `/api/auth/me` | Update profile |
 | PUT | `/api/auth/change-password` | Change password |
 | POST | `/api/auth/logout` | Logout |
+| GET | `/api/auth/workers` | Get all workers (admin, sorted by rating) |
+| GET | `/api/auth/users` | Get users with pagination (admin) |
+| POST | `/api/auth/users` | Create user (admin) |
+| PUT | `/api/auth/users/:id/status` | Toggle user status (admin) |
+| PUT | `/api/auth/users/:id/password` | Reset password (admin) |
+| PUT | `/api/auth/users/:id` | Update user (admin) |
 
 ### Tickets
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | POST | `/api/tickets` | Create ticket |
 | GET | `/api/tickets` | Get all tickets (admin) |
-| GET | `/api/tickets/my-tickets` | Get my tickets |
+| GET | `/api/tickets/my-tickets` | Get my tickets (student) |
 | GET | `/api/tickets/assigned` | Get assigned tickets (worker) |
 | GET | `/api/tickets/:id` | Get ticket details |
 | PUT | `/api/tickets/:id/priority` | Set priority (admin) |
@@ -181,6 +199,7 @@ Or through the hidden admin login at `/admin-login` (requires admin auth).
 | PUT | `/api/tickets/:id/assign` | Assign ticket (admin) |
 | PUT | `/api/tickets/:id/start` | Start work (worker) |
 | PUT | `/api/tickets/:id/resolve` | Resolve ticket (worker) |
+| PUT | `/api/tickets/:id/rate` | Rate ticket (student) |
 
 ### Tasks
 | Method | Endpoint | Description |
@@ -191,6 +210,7 @@ Or through the hidden admin login at `/admin-login` (requires admin auth).
 | PUT | `/api/tasks/:id/start` | Start task |
 | PUT | `/api/tasks/:id/complete` | Complete task |
 | PUT | `/api/tasks/:id/notes` | Add notes |
+| PUT | `/api/tasks/:id/estimate` | Set estimate (admin) |
 
 ### Chatbot
 | Method | Endpoint | Description |
@@ -198,6 +218,14 @@ Or through the hidden admin login at `/admin-login` (requires admin auth).
 | POST | `/api/chatbot/chat` | Send message |
 | DELETE | `/api/chatbot/history` | Clear history |
 | GET | `/api/chatbot/status` | Check availability |
+
+### Settings (Admin)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/auth/settings` | Get system settings |
+| PUT | `/api/auth/settings` | Update settings |
+| DELETE | `/api/auth/settings/:key` | Delete setting |
+| POST | `/api/auth/verify-api-key` | Verify API key |
 
 ---
 
@@ -208,7 +236,7 @@ Or through the hidden admin login at `/admin-login` (requires admin auth).
 - **Framework:** Express.js
 - **Database:** MongoDB + Mongoose
 - **Authentication:** JWT (jsonwebtoken)
-- **Security:** Helmet, CORS, express-rate-limit
+- **Security:** Helmet, CORS, express-rate-limit, CSRF
 - **Validation:** express-validator
 - **File Upload:** Multer
 - **Password Hashing:** bcryptjs
@@ -226,17 +254,7 @@ Or through the hidden admin login at `/admin-login` (requires admin auth).
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+This project is licensed under the MIT License.
 
 ---
 
@@ -256,37 +274,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🚀 Deployment Guide
 
-### Quick Deploy
-
-**Backend (Render):**
-1. Push code to GitHub
-2. Connect repo to Render
-3. Set environment variables (see below)
-4. Deploy
-
-**Frontend (Vercel):**
-1. Connect repo to Vercel
-2. Configure: Framework = Vite, Build = npm run build, Output = dist
-3. Deploy
-
-### Environment Variables
-
-#### Backend (on Render)
-| Variable | Value |
-|----------|-------|
-| PORT | 10000 |
-| NODE_ENV | production |
-| MONGODB_URI | mongodb+srv://... |
-| JWT_SECRET | 64-character random string |
-| JWT_EXPIRES_IN | 24h |
-| FRONTEND_URL | https://your-vercel-app.vercel.app |
-| GROQ_API_KEY | (optional) get from console.groq.com |
-| AI_MODEL | llama-3.3-70b-versatile |
-
-#### Frontend (on Vercel)
-| Variable | Value |
-|----------|-------|
-| VITE_API_URL | https://your-render-app.onrender.com |
-
-### Full Deployment Guide
 See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed step-by-step instructions.

@@ -36,6 +36,12 @@ export const getWorkers = () => api.get('/auth/workers')
 export const getUsers = (params) => api.get('/auth/users', { params })
 export const createUser = (data) => api.post('/auth/users', data)
 export const updateUserStatus = (id, data) => api.put(`/auth/users/${id}/status`, data)
+export const resetUserPassword = (id, newPassword) => api.put(`/auth/users/${id}/password`, { newPassword })
+export const updateUserDetails = (id, data) => api.put(`/auth/users/${id}`, data)
+export const getSystemSettings = () => api.get('/auth/settings')
+export const updateSystemSettings = (data) => api.put('/auth/settings', data)
+export const deleteSystemSettings = (key) => api.delete(`/auth/settings/${key}`)
+export const verifyApiKey = (key) => api.post('/auth/verify-api-key', { apiKey: key })
 
 // Tickets
 export const createTicket = (data) => api.post('/tickets', data)
